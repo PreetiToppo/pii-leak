@@ -1,0 +1,23 @@
+{
+  "swagger": "2.0",
+  "info": {"title": "Demo HR API", "version": "1.0"},
+  "basePath": "/v1",
+  "paths": {
+    "/users/{user_id}": {
+      "get": {
+        "parameters": [{"name": "user_id", "in": "path", "required": true, "type": "integer"}],
+        "responses": {"200": {"description": "ok", "schema": {"$ref": "#/definitions/User"}}}
+      }
+    },
+    "/orders": {
+      "get": {
+        "responses": {"200": {"description": "ok", "schema": {"type": "array", "items": {"$ref": "#/definitions/Order"}}}}
+      }
+    }
+  },
+  "definitions": {
+    "User": {"type": "object", "properties": {
+      "id": {"type": "integer"}, "name": {"type": "string"}, "country": {"type": "string"}}},
+    "Order": {"type": "object", "properties": {"id": {"type": "integer"}, "total": {"type": "number"}}}
+  }
+}

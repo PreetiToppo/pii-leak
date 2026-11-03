@@ -1,0 +1,38 @@
+{
+  "openapi": "3.0.3",
+  "info": {"title": "Demo HR API", "version": "2.0"},
+  "servers": [{"url": "/v2"}],
+  "paths": {
+    "/users/{user_id}": {
+      "get": {
+        "parameters": [{"name": "user_id", "in": "path", "required": true, "schema": {"type": "integer"}}],
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/User"}}}}}
+      }
+    },
+    "/users": {
+      "post": {
+        "requestBody": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/User"}}}},
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object", "properties": {"created": {"type": "boolean"}}}}}}}
+      }
+    },
+    "/orders": {
+      "get": {
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/Order"}}}}}}
+      }
+    },
+    "/health": {
+      "get": {
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object", "properties": {"status": {"type": "string"}, "build": {"type": "string"}}}}}}}
+      }
+    }
+  },
+  "components": {"schemas": {
+    "User": {"type": "object", "properties": {
+      "id": {"type": "integer"}, "name": {"type": "string"}, "country": {"type": "string"},
+      "email": {"type": "string"}, "aadhaar_number": {"type": "string"}, "tax_id": {"type": "string"},
+      "bank": {"$ref": "#/components/schemas/Bank"}}},
+    "Bank": {"type": "object", "properties": {"ifsc": {"type": "string"}, "upi_id": {"type": "string"}}},
+    "Order": {"type": "object", "properties": {
+      "id": {"type": "integer"}, "total": {"type": "number"}, "customer_email": {"type": "string"}}}
+  }}
+}
