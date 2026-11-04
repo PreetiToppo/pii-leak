@@ -37,7 +37,7 @@ pythonpath = ["."]
 source = ["piileak"]
 
 [tool.coverage.report]
-fail_under = 0   # raise to 85 once CI is added
+fail_under = 85
 
 [tool.ruff]
 line-length = 120
