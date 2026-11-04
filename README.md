@@ -65,7 +65,9 @@ piileak scan --old OLD_SPEC --new NEW_SPEC --base-url URL [options]
 |---|---|
 | `-H "Name: value"` | Extra request header (repeatable), e.g. an auth token |
 | `--fail-on low\|medium\|high` | Lowest severity that fails the build (default `medium`) |
-| `--format text\|json` | Output format |
+| `--format text\|json\|sarif` | Output format |
+| `--output FILE` | Write the chosen format to a file (the text report is still printed) |
+| `--ignore-file FILE` | Accepted-risk suppressions (default: `./.piileak-ignore.yaml` if present) |
 | `--probe-all` | Also probe unchanged endpoints (finds undocumented leaks) |
 | `--no-static` | Disable field-name heuristics |
 | `--allow-unsafe` | Also probe POST/PUT/PATCH/DELETE (staging only) |
@@ -75,6 +77,30 @@ piileak scan --old OLD_SPEC --new NEW_SPEC --base-url URL [options]
 | `--include-person` | Also report person names (noisy) |
 
 Exit codes: `0` pass, `1` PII gate failed, `2` invalid input or unsafe target.
+
+## Accepting known risks
+
+Create `.piileak-ignore.yaml` in the repo root (see `examples/piileak-ignore.example.yaml`):
+
+```yaml
+suppressions:
+  - endpoint: "GET /users/*"        # canonical endpoint key; "*" is the only wildcard
+    field: "email"                  # canonical field path, e.g. items[].email
+    entity: EMAIL_ADDRESS           # optional, default: any entity
+    reason: "Needed by the HR portal, approved in SEC-123"   # required
+    expires: 2027-03-01             # required: accepted risk must be reviewed again
+```
+
+Suppressed findings still appear in every report, marked as accepted, but never fail the build.
+Expired suppressions stop applying (the finding comes back), and unused or soon-to-expire
+ones are listed as warnings so the file does not rot.
+
+## Use in CI and GitHub code scanning
+
+`--format sarif --output piileak.sarif` writes a SARIF 2.1.0 file that GitHub can show in the
+Security tab. Only findings introduced by the migration are included. Copy
+`examples/workflows/piileak-gate.yml` into the repo that owns the API and adjust the paths.
+Use a repo-relative path for `--new` so GitHub can anchor the alerts.
 
 ## Design decisions
 

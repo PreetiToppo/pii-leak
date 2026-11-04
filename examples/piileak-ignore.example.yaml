@@ -1,0 +1,8 @@
+# Copy to the repo root as .piileak-ignore.yaml.
+# Every entry needs a reason and an expiry date. "*" is the only wildcard.
+suppressions:
+  - endpoint: "GET /users/*"
+    field: "email"
+    entity: EMAIL_ADDRESS
+    reason: "Needed by the HR portal, approved in SEC-123"
+    expires: 2027-03-01

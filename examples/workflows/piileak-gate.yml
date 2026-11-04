@@ -1,0 +1,41 @@
+# Template: copy to .github/workflows/ in the repository that OWNS the API being migrated.
+# It fails the pull request if the new API version exposes PII the old one did not, and
+# publishes the findings to GitHub's Security tab (code scanning).
+name: piileak-gate
+
+on:
+  pull_request:
+    paths: ["openapi/**"]
+
+permissions:
+  contents: read
+  security-events: write   # needed to upload SARIF
+
+jobs:
+  piileak:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install PIILeak
+        run: |
+          pip install "piileak @ git+https://github.com/PreetiToppo/pii-leak.git"
+          python -m spacy download en_core_web_sm
+      - name: PII gate
+        env:
+          STAGING_URL: ${{ secrets.STAGING_URL }}
+          STAGING_TOKEN: ${{ secrets.STAGING_TOKEN }}
+        run: |
+          piileak scan \
+            --old openapi/v1.json \
+            --new openapi/v2.json \
+            --base-url "$STAGING_URL" \
+            -H "Authorization: Bearer $STAGING_TOKEN" \
+            --fail-on medium \
+            --format sarif --output piileak.sarif
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()          # upload results even when the gate fails
+        with:
+          sarif_file: piileak.sarif
