@@ -31,6 +31,9 @@ async def scan(
     probe_all: bool = False,
     static: bool = True,
     allow_unsafe: bool = False,
+    allow_private: bool = False,
+    max_retries: int = 2,
+    max_requests: int = 500,
     concurrency: int = 10,
     strip_version: bool = True,
     transport=None,
@@ -61,7 +64,16 @@ async def scan(
                     )
 
     # 2) dynamic: probe the new API and scan real response values
-    prober = Prober(base_url, headers, concurrency, allow_unsafe=allow_unsafe, transport=transport)
+    prober = Prober(
+        base_url,
+        headers,
+        concurrency,
+        allow_unsafe=allow_unsafe,
+        transport=transport,
+        allow_private=allow_private,
+        max_retries=max_retries,
+        max_requests=max_requests,
+    )
     probes = await prober.probe_all([d.endpoint for d in diffs])
 
     for pr in probes:

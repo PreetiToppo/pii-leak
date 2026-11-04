@@ -6,6 +6,7 @@ Set PIILEAK_ALLOWED_HOSTS="staging.example.com,localhost" before exposing it.
 
 from __future__ import annotations
 
+import json
 import os
 from urllib.parse import urlparse
 
@@ -15,6 +16,7 @@ from pydantic import BaseModel, Field
 from .detector import PiiDetector
 from .models import Severity
 from .normalize import SpecError
+from .prober import UnsafeTargetError
 from .report import render_json
 from .scanner import scan
 
@@ -55,6 +57,6 @@ async def scan_endpoint(req: ScanRequest):
         )
     except SpecError as exc:
         raise HTTPException(422, str(exc)) from exc
-    import json
-
+    except UnsafeTargetError as exc:
+        raise HTTPException(400, str(exc)) from exc
     return json.loads(render_json(result, req.fail_on))

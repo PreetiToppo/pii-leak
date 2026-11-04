@@ -9,6 +9,7 @@ import sys
 from .detector import PiiDetector
 from .models import Severity
 from .normalize import SpecError, load_spec
+from .prober import UnsafeTargetError
 from .report import render_json, render_text
 from .scanner import gate_failures, scan
 
@@ -36,6 +37,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--probe-all", action="store_true", help="probe unchanged endpoints too (finds undocumented leaks)")
     s.add_argument("--no-static", action="store_true", help="disable field-name heuristics")
     s.add_argument("--allow-unsafe", action="store_true", help="also probe POST/PUT/PATCH/DELETE (staging only!)")
+    s.add_argument("--allow-private", action="store_true", help="allow probing localhost/private IPs (default: refuse)")
+    s.add_argument("--max-retries", type=int, default=2, help="retries for 429/5xx/connection errors")
+    s.add_argument("--max-requests", type=int, default=500, help="hard cap on total HTTP requests")
     s.add_argument("--keep-version-prefix", action="store_true", help="do not strip /v1 /v2 when matching endpoints")
     s.add_argument("--include-person", action="store_true", help="also report PERSON names (noisy)")
     s.add_argument("--min-score", type=float, default=0.5)
@@ -58,11 +62,14 @@ def main(argv: list[str] | None = None) -> int:
                 probe_all=args.probe_all,
                 static=not args.no_static,
                 allow_unsafe=args.allow_unsafe,
+                allow_private=args.allow_private,
+                max_retries=args.max_retries,
+                max_requests=args.max_requests,
                 concurrency=args.concurrency,
                 strip_version=not args.keep_version_prefix,
             )
         )
-    except SpecError as exc:
+    except (SpecError, UnsafeTargetError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     fail_on = Severity(args.fail_on)
