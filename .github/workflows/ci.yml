@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: py${{ matrix.python }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python: ["3.10", "3.11", "3.12"]
+        include:
+          - os: windows-latest
+            python: "3.11"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          python -m spacy download en_core_web_sm
+      - name: Lint
+        run: |
+          ruff check .
+          ruff format --check .
+      - name: Type check
+        run: mypy src
+      - name: Tests (coverage gate comes from pyproject.toml)
+        run: pytest --cov=piileak --cov-report=term-missing --cov-report=xml
+      - uses: actions/upload-artifact@v4
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.12'
+        with:
+          name: coverage
+          path: coverage.xml
+
+  demo-gate:
+    name: gate behaves correctly on the demo API
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install
+        run: |
+          pip install -e .
+          python -m spacy download en_core_web_sm
+      - name: Start demo API
+        run: |
+          uvicorn examples.demo_api:app --port 8000 &
+          for i in $(seq 1 20); do curl -sf http://localhost:8000/v2/health && break || sleep 1; done
+      - name: Leaking migration must FAIL the gate (exit code 1)
+        run: |
+          set +e
+          piileak scan --old examples/specs/v1_swagger2.json --new examples/specs/v2_openapi3.json \
+            --base-url http://localhost:8000 --allow-private
+          code=$?
+          echo "exit code: $code"
+          test "$code" -eq 1
+      - name: Clean migration must PASS the gate (exit code 0)
+        run: |
+          piileak scan --old examples/specs/v1_swagger2.json --new examples/specs/v1_swagger2.json \
+            --base-url http://localhost:8000 --allow-private --probe-all
