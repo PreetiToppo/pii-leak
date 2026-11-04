@@ -63,6 +63,8 @@ class Finding(BaseModel):
     score: float = 1.0
     sample: str | None = None  # masked, never the raw value
     is_new_field: bool = True  # introduced by this migration? only these gate the build
+    suppressed: bool = False  # accepted via .piileak-ignore.yaml (still reported, never gates)
+    suppression_reason: str | None = None
 
 
 class ProbeResult(BaseModel):
@@ -79,3 +81,4 @@ class ScanResult(BaseModel):
     diffs: list[EndpointDiff]
     probes: list[ProbeResult]
     findings: list[Finding]
+    suppression_warnings: list[str] = Field(default_factory=list)

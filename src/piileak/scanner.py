@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from .detector import ENTITY_SEVERITY, PiiDetector, canonical_field, name_hint, walk_leaves
 from .diff import diff_specs
 from .models import Finding, NormalizedSpec, ScanResult, Severity
 from .normalize import normalize
 from .prober import Prober
+from .suppressions import Suppression, apply_suppressions
 
 
 def _add(store: dict, f: Finding) -> None:
@@ -37,6 +40,8 @@ async def scan(
     concurrency: int = 10,
     strip_version: bool = True,
     transport=None,
+    suppressions: list[Suppression] | None = None,
+    today: date | None = None,
 ) -> ScanResult:
     old: NormalizedSpec = normalize(old_raw, strip_version)
     new: NormalizedSpec = normalize(new_raw, strip_version)
@@ -121,9 +126,10 @@ async def scan(
     live = {(f.endpoint, f.field) for f in store.values() if f.source == "response"}
     kept = [f for f in store.values() if f.source == "response" or (f.endpoint, f.field) not in live]
     findings = sorted(kept, key=lambda f: (-f.severity.rank, f.endpoint, f.field))
-    return ScanResult(diffs=diffs, probes=probes, findings=findings)
+    findings, warnings = apply_suppressions(findings, suppressions or [], today or date.today())
+    return ScanResult(diffs=diffs, probes=probes, findings=findings, suppression_warnings=warnings)
 
 
 def gate_failures(result: ScanResult, fail_on: Severity) -> list[Finding]:
     """Only findings introduced by this migration, at or above the threshold, fail the build."""
-    return [f for f in result.findings if f.is_new_field and f.severity.rank >= fail_on.rank]
+    return [f for f in result.findings if f.is_new_field and not f.suppressed and f.severity.rank >= fail_on.rank]
