@@ -102,6 +102,17 @@ Security tab. Only findings introduced by the migration are included. Copy
 `examples/workflows/piileak-gate.yml` into the repo that owns the API and adjust the paths.
 Use a repo-relative path for `--new` so GitHub can anchor the alerts.
 
+## Docker
+
+```bash
+docker pull ghcr.io/preetitoppo/pii-leak:latest
+docker run --rm -v "$PWD":/work ghcr.io/preetitoppo/pii-leak:latest \
+  scan --old openapi/v1.json --new openapi/v2.json --base-url https://staging.example.com
+```
+
+The image runs as an unprivileged user and includes the spaCy model. To run the optional HTTP service:
+`docker run --rm -p 8000:8000 --entrypoint uvicorn <image> piileak.server:app --host 0.0.0.0`.
+
 ## Design decisions
 
 - **Normalise before diffing.** Swagger 2.0 and OpenAPI 3.x describe the same API differently, so
