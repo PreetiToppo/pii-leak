@@ -5,13 +5,15 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
+from pathlib import Path
 
 from .detector import PiiDetector
 from .models import Severity
 from .normalize import SpecError, load_spec
 from .prober import UnsafeTargetError
-from .report import render_json, render_text
+from .report import render_json, render_sarif, render_text
 from .scanner import gate_failures, scan
+from .suppressions import DEFAULT_IGNORE_FILE, SuppressionError, load_suppressions
 
 
 def _headers(items: list[str]) -> dict[str, str]:
@@ -33,7 +35,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--base-url", required=True, help="host of the NEW API, e.g. https://staging.example.com")
     s.add_argument("--header", "-H", action="append", help="extra header, repeatable: -H 'Authorization: Bearer x'")
     s.add_argument("--fail-on", choices=[x.value for x in Severity], default="medium")
-    s.add_argument("--format", choices=["text", "json"], default="text")
+    s.add_argument("--format", choices=["text", "json", "sarif"], default="text")
+    s.add_argument("--output", help="write the chosen --format to this file (the text report is still printed)")
+    s.add_argument("--ignore-file", help=f"accepted-risk suppressions (default: ./{DEFAULT_IGNORE_FILE} if present)")
     s.add_argument("--probe-all", action="store_true", help="probe unchanged endpoints too (finds undocumented leaks)")
     s.add_argument("--no-static", action="store_true", help="disable field-name heuristics")
     s.add_argument("--allow-unsafe", action="store_true", help="also probe POST/PUT/PATCH/DELETE (staging only!)")
@@ -51,6 +55,8 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         old, new = load_spec(args.old), load_spec(args.new)
+        ignore_path = args.ignore_file or (DEFAULT_IGNORE_FILE if Path(DEFAULT_IGNORE_FILE).is_file() else None)
+        suppressions = load_suppressions(ignore_path) if ignore_path else []
         detector = PiiDetector(min_score=args.min_score, include_person=args.include_person)
         result = asyncio.run(
             scan(
@@ -67,13 +73,25 @@ def main(argv: list[str] | None = None) -> int:
                 max_requests=args.max_requests,
                 concurrency=args.concurrency,
                 strip_version=not args.keep_version_prefix,
+                suppressions=suppressions,
             )
         )
-    except (SpecError, UnsafeTargetError) as exc:
+    except (SpecError, UnsafeTargetError, SuppressionError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     fail_on = Severity(args.fail_on)
-    print(render_json(result, fail_on) if args.format == "json" else render_text(result, fail_on))
+    text = render_text(result, fail_on)
+    if args.format == "json":
+        body = render_json(result, fail_on)
+    elif args.format == "sarif":
+        body = render_sarif(result, spec_uri=Path(args.new).as_posix())
+    else:
+        body = text
+    if args.output:
+        Path(args.output).write_text(body, encoding="utf-8")
+        print(text)
+    else:
+        print(body)
     return 1 if gate_failures(result, fail_on) else 0
 
 
