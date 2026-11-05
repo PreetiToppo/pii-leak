@@ -97,3 +97,13 @@ def test_allof_merges_properties():
     extra = {"type": "object", "properties": {"email": {"type": "string"}}}
     schema = {"allOf": [{"$ref": "#/definitions/Base"}, extra]}
     assert set(flatten_schema(schema, root)) == {"id", "email"}
+
+
+def test_strip_prefix_matches_whole_segments_only():
+    assert canonical_path("/api/v3/user/{id}", strip_prefixes=["/api"]) == "/user/{}"
+    assert canonical_path("/api/v3/user/{id}", strip_prefixes=["/api/v3"]) == "/user/{}"
+    assert canonical_path("/api/user", strip_prefixes=["api"]) == "/user"  # leading slash optional
+    assert canonical_path("/apiary/user", strip_prefixes=["/api"]) == "/apiary/user"  # not a segment match
+    assert canonical_path("/api", strip_prefixes=["/api"]) == "/"
+    assert canonical_path("/user", strip_prefixes=["/api"]) == "/user"  # nothing to strip
+    assert canonical_path("/api/user", strip_prefixes=["/", ""]) == "/api/user"  # empty prefixes are ignored

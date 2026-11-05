@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -119,7 +120,13 @@ def flatten_schema(schema: Any, root: dict, prefix: str = "", _seen: tuple = (),
 
 
 # ---------------------------------------------------------------- endpoints
-def canonical_path(full_path: str, strip_version: bool = True) -> str:
+def canonical_path(full_path: str, strip_version: bool = True, strip_prefixes: Sequence[str] = ()) -> str:
+    """Canonical endpoint path: version segments dropped, {param} names replaced by {}.
+
+    strip_prefixes removes a leading base path such as /api so that /api/v3/user/{id} in one spec
+    matches /user/{username} in another. Prefixes match whole segments only and are themselves
+    normalised the same way, so "/api/v3" and "/api" behave identically.
+    """
     segs = []
     for seg in (s for s in full_path.split("/") if s):
         if strip_version and VERSION_SEGMENT.match(seg):
@@ -127,7 +134,16 @@ def canonical_path(full_path: str, strip_version: bool = True) -> str:
         if seg.startswith("{") and seg.endswith("}"):
             seg = "{}"
         segs.append(seg)
-    return "/" + "/".join(segs)
+    path = "/" + "/".join(segs)
+    for raw_prefix in strip_prefixes:
+        prefix = canonical_path(raw_prefix, strip_version)
+        if prefix == "/":
+            continue
+        if path == prefix:
+            return "/"
+        if path.startswith(prefix + "/"):
+            return path[len(prefix) :]
+    return path
 
 
 def _parse_param(p: Any, root: dict, fmt: str) -> Param | None:
@@ -185,7 +201,7 @@ def _base_path(raw: dict, fmt: str) -> str:
     return ""
 
 
-def normalize(raw: dict, strip_version: bool = True) -> NormalizedSpec:
+def normalize(raw: dict, strip_version: bool = True, strip_prefixes: Sequence[str] = ()) -> NormalizedSpec:
     fmt = detect_format(raw)
     base = _base_path(raw, fmt).rstrip("/")
     spec = NormalizedSpec(source_format=fmt, title=(raw.get("info") or {}).get("title", ""))
@@ -201,7 +217,7 @@ def normalize(raw: dict, strip_version: bool = True) -> NormalizedSpec:
             full_path = f"{base}{path}"
             ep = Endpoint(
                 method=method.upper(),
-                key_path=canonical_path(full_path, strip_version),
+                key_path=canonical_path(full_path, strip_version, strip_prefixes),
                 full_path=full_path,
                 params=[x for x in parsed if x.location != "body"],
                 request_fields=_request_fields(op, all_params, raw, fmt),
