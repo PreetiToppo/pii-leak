@@ -3,8 +3,8 @@
 import httpx
 import pytest
 
-from piileak.models import Endpoint
-from piileak.prober import Prober, UnsafeTargetError, ensure_public_target
+from piileak.models import Endpoint, Param
+from piileak.prober import Prober, UnsafeTargetError, build_url_parts, ensure_public_target
 
 
 def ep(path: str = "/x", method: str = "GET") -> Endpoint:
@@ -180,3 +180,50 @@ async def test_allow_private_skips_the_guard():
     )
     [res] = await prober.probe_all([ep()])
     assert res.status == "ok"
+
+
+# ------------------------------------------------------------------ --param overrides
+def param_ep() -> Endpoint:
+    return Endpoint(
+        method="GET",
+        key_path="/users/{}",
+        full_path="/v1/users/{username}",
+        params=[
+            Param(name="username", location="path", required=True, type="string", example="example-user"),
+            Param(name="expand", location="query", required=False, type="string"),
+            Param(name="limit", location="query", required=True, type="integer"),
+            Param(name="X-Tenant", location="header", required=False, type="string"),
+        ],
+    )
+
+
+def test_defaults_without_overrides():
+    path, query, headers = build_url_parts(param_ep())
+    assert path == "/v1/users/example-user"
+    assert query == {"limit": "1"} and headers == {}  # optional ones are not sent
+
+
+def test_overrides_win_and_optional_params_are_sent_when_overridden():
+    path, query, headers = build_url_parts(
+        param_ep(), {"username": "user1", "expand": "profile", "X-Tenant": "acme", "limit": "5"}
+    )
+    assert path == "/v1/users/user1"
+    assert query == {"expand": "profile", "limit": "5"}
+    assert headers == {"X-Tenant": "acme"}
+
+
+def test_path_values_are_url_quoted():
+    path, _, _ = build_url_parts(param_ep(), {"username": "a b/c"})
+    assert path == "/v1/users/a%20b%2Fc"
+
+
+async def test_prober_uses_the_overrides_on_the_wire():
+    seen = []
+
+    def handler(request):
+        seen.append(str(request.url))
+        return httpx.Response(200, json={})
+
+    prober = make_prober(handler, param_overrides={"username": "user1", "limit": "2"})
+    [res] = await prober.probe_all([param_ep()])
+    assert res.status == "ok" and seen == ["http://test/v1/users/user1?limit=2"]

@@ -14,11 +14,11 @@ import re
 import socket
 from collections.abc import Awaitable, Callable, Iterable
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import httpx
 
-from .models import Endpoint, ProbeResult
+from .models import Endpoint, Param, ProbeResult
 
 SAFE_METHODS = {"GET"}
 RETRY_STATUSES = {429, 502, 503, 504}
@@ -76,27 +76,33 @@ async def ensure_public_target(base_url: str, resolver: Resolver | None = None) 
 
 
 # --------------------------------------------------------------------------- URL building
-def build_url_parts(ep: Endpoint) -> tuple[str, dict[str, str], dict[str, str]]:
-    """Fill path params, required query params and required headers with examples."""
+def build_url_parts(
+    ep: Endpoint, overrides: dict[str, str] | None = None
+) -> tuple[str, dict[str, str], dict[str, str]]:
+    """Fill path params, query params and headers.
+
+    Values come from the caller's overrides (--param name=value), else the spec's example,
+    else a typed default. Required query params and headers are always sent; an optional one
+    is sent only when the caller overrides it. Path values are URL-quoted.
+    """
+    overrides = overrides or {}
     by_name = {p.name: p for p in ep.params if p.location == "path"}
 
-    def fill(m: re.Match[str]) -> str:
-        p = by_name.get(m.group(1))
-        if p is None:
-            return "1"
+    def value(p: Param) -> str:
+        if p.name in overrides:
+            return overrides[p.name]
         return str(p.example if p.example is not None else _DEFAULTS.get(p.type, "1"))
 
+    def fill(m: re.Match[str]) -> str:
+        name = m.group(1)
+        if name in overrides:
+            return quote(overrides[name], safe="")
+        p = by_name.get(name)
+        return quote(value(p), safe="") if p is not None else "1"
+
     path = _PLACEHOLDER.sub(fill, ep.full_path)
-    query = {
-        p.name: str(p.example if p.example is not None else _DEFAULTS.get(p.type, "1"))
-        for p in ep.params
-        if p.location == "query" and p.required
-    }
-    headers = {
-        p.name: str(p.example if p.example is not None else _DEFAULTS.get(p.type, "1"))
-        for p in ep.params
-        if p.location == "header" and p.required
-    }
+    query = {p.name: value(p) for p in ep.params if p.location == "query" and (p.required or p.name in overrides)}
+    headers = {p.name: value(p) for p in ep.params if p.location == "header" and (p.required or p.name in overrides)}
     return path, query, headers
 
 
@@ -122,6 +128,7 @@ class Prober:
         transport: Any = None,
         *,
         allow_private: bool = False,
+        param_overrides: dict[str, str] | None = None,
         max_retries: int = 2,
         backoff: float = 0.5,
         max_backoff: float = 30.0,
@@ -136,6 +143,7 @@ class Prober:
         self.allow_unsafe = allow_unsafe
         self.transport = transport  # tests inject httpx.MockTransport / ASGITransport
         self.allow_private = allow_private
+        self.param_overrides = param_overrides or {}
         self.max_retries = max(0, max_retries)
         self.backoff = backoff
         self.max_backoff = max_backoff
@@ -176,7 +184,7 @@ class Prober:
                 status="skipped",
                 detail=f"{ep.method} is not read-only (use --allow-unsafe to probe)",
             )
-        path, query, extra = build_url_parts(ep)
+        path, query, extra = build_url_parts(ep, self.param_overrides)
         async with self._sem:
             resp, error = await self._send(client, ep, path, query, extra)
         if resp is None:
