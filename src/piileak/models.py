@@ -82,3 +82,5 @@ class ScanResult(BaseModel):
     probes: list[ProbeResult]
     findings: list[Finding]
     suppression_warnings: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)  # e.g. the two specs share no endpoints
+    probing: bool = True  # False when run with --no-probe

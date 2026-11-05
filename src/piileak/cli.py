@@ -16,14 +16,20 @@ from .scanner import gate_failures, scan
 from .suppressions import DEFAULT_IGNORE_FILE, SuppressionError, load_suppressions
 
 
-def _headers(items: list[str]) -> dict[str, str]:
-    out = {}
+def _pairs(items: list[str] | None, sep: str, flag: str, example: str) -> dict[str, str]:
+    """Parse repeated 'name<sep>value' options. Bad input is an input error (exit 2), never exit 1,
+    because exit 1 is reserved for 'the PII gate failed'."""
+    out: dict[str, str] = {}
     for item in items or []:
-        if ":" not in item:
-            raise SystemExit(f"Bad --header {item!r}, expected 'Name: value'")
-        k, v = item.split(":", 1)
-        out[k.strip()] = v.strip()
+        name, found, value = item.partition(sep)
+        if not found or not name.strip():
+            raise SpecError(f"bad {flag} {item!r}, expected {example!r}")
+        out[name.strip()] = value.strip()
     return out
+
+
+def _headers(items: list[str] | None) -> dict[str, str]:
+    return _pairs(items, ":", "--header", "Name: value")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -32,7 +38,16 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("scan", help="diff two specs, probe the new API, scan responses for PII")
     s.add_argument("--old", required=True, help="old spec (Swagger 2.0 / OpenAPI 3.x, json or yaml)")
     s.add_argument("--new", required=True, help="new spec")
-    s.add_argument("--base-url", required=True, help="host of the NEW API, e.g. https://staging.example.com")
+    s.add_argument(
+        "--base-url", help="host of the NEW API, e.g. https://staging.example.com (not needed with --no-probe)"
+    )
+    s.add_argument("--no-probe", action="store_true", help="spec-only mode: never call the API, check field names only")
+    s.add_argument(
+        "--param", action="append", help="value for a path/query/header parameter, repeatable: --param username=user1"
+    )
+    s.add_argument(
+        "--strip-prefix", action="append", help="drop a leading base path before matching endpoints, e.g. /api"
+    )
     s.add_argument("--header", "-H", action="append", help="extra header, repeatable: -H 'Authorization: Bearer x'")
     s.add_argument("--fail-on", choices=[x.value for x in Severity], default="medium")
     s.add_argument("--format", choices=["text", "json", "sarif"], default="text")
@@ -54,6 +69,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        if not args.no_probe and not args.base_url:
+            raise SpecError("--base-url is required unless --no-probe is used")
         old, new = load_spec(args.old), load_spec(args.new)
         ignore_path = args.ignore_file or (DEFAULT_IGNORE_FILE if Path(DEFAULT_IGNORE_FILE).is_file() else None)
         suppressions = load_suppressions(ignore_path) if ignore_path else []
@@ -62,9 +79,12 @@ def main(argv: list[str] | None = None) -> int:
             scan(
                 old,
                 new,
-                args.base_url,
+                args.base_url or "",
                 detector,
                 headers=_headers(args.header),
+                probe=not args.no_probe,
+                param_overrides=_pairs(args.param, "=", "--param", "name=value"),
+                strip_prefixes=args.strip_prefix or [],
                 probe_all=args.probe_all,
                 static=not args.no_static,
                 allow_unsafe=args.allow_unsafe,

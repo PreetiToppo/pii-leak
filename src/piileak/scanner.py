@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import date
 
 from .detector import ENTITY_SEVERITY, PiiDetector, canonical_field, name_hint, walk_leaves
 from .diff import diff_specs
-from .models import Finding, NormalizedSpec, ScanResult, Severity
+from .models import Finding, NormalizedSpec, ProbeResult, ScanResult, Severity
 from .normalize import normalize
 from .prober import Prober
 from .suppressions import Suppression, apply_suppressions
@@ -35,6 +36,9 @@ async def scan(
     static: bool = True,
     allow_unsafe: bool = False,
     allow_private: bool = False,
+    probe: bool = True,
+    param_overrides: dict[str, str] | None = None,
+    strip_prefixes: Sequence[str] = (),
     max_retries: int = 2,
     max_requests: int = 500,
     concurrency: int = 10,
@@ -43,8 +47,16 @@ async def scan(
     suppressions: list[Suppression] | None = None,
     today: date | None = None,
 ) -> ScanResult:
-    old: NormalizedSpec = normalize(old_raw, strip_version)
-    new: NormalizedSpec = normalize(new_raw, strip_version)
+    old: NormalizedSpec = normalize(old_raw, strip_version, strip_prefixes)
+    new: NormalizedSpec = normalize(new_raw, strip_version, strip_prefixes)
+    warnings: list[str] = []
+    if old.endpoints and new.endpoints and not (set(old.endpoints) & set(new.endpoints)):
+        # WHY: with no overlap every endpoint looks new, so old exposure is reported as migration-induced
+        warnings.append(
+            f"none of the {len(old.endpoints)} old endpoints match the {len(new.endpoints)} new ones "
+            f"(e.g. '{next(iter(old.endpoints))}' vs '{next(iter(new.endpoints))}'), so every endpoint is "
+            "treated as new. If the base path differs, use --strip-prefix."
+        )
     diffs = diff_specs(old, new, include_unchanged=probe_all)
     diff_by_key = {d.key: d for d in diffs}
     store: dict = {}
@@ -69,17 +81,20 @@ async def scan(
                     )
 
     # 2) dynamic: probe the new API and scan real response values
-    prober = Prober(
-        base_url,
-        headers,
-        concurrency,
-        allow_unsafe=allow_unsafe,
-        transport=transport,
-        allow_private=allow_private,
-        max_retries=max_retries,
-        max_requests=max_requests,
-    )
-    probes = await prober.probe_all([d.endpoint for d in diffs])
+    probes: list[ProbeResult] = []
+    if probe:
+        prober = Prober(
+            base_url,
+            headers,
+            concurrency,
+            allow_unsafe=allow_unsafe,
+            transport=transport,
+            allow_private=allow_private,
+            param_overrides=param_overrides,
+            max_retries=max_retries,
+            max_requests=max_requests,
+        )
+        probes = await prober.probe_all([d.endpoint for d in diffs])
 
     for pr in probes:
         if pr.status != "ok":
@@ -126,8 +141,15 @@ async def scan(
     live = {(f.endpoint, f.field) for f in store.values() if f.source == "response"}
     kept = [f for f in store.values() if f.source == "response" or (f.endpoint, f.field) not in live]
     findings = sorted(kept, key=lambda f: (-f.severity.rank, f.endpoint, f.field))
-    findings, warnings = apply_suppressions(findings, suppressions or [], today or date.today())
-    return ScanResult(diffs=diffs, probes=probes, findings=findings, suppression_warnings=warnings)
+    findings, suppression_warnings = apply_suppressions(findings, suppressions or [], today or date.today())
+    return ScanResult(
+        diffs=diffs,
+        probes=probes,
+        findings=findings,
+        suppression_warnings=suppression_warnings,
+        warnings=warnings,
+        probing=probe,
+    )
 
 
 def gate_failures(result: ScanResult, fail_on: Severity) -> list[Finding]:

@@ -33,11 +33,15 @@ def render_text(result: ScanResult, fail_on: Severity) -> str:
     lines = [
         "PIILeak scan",
         f"  endpoints changed : {len(result.diffs)}",
-        f"  probed ok         : {ok}/{len(result.probes)}",
+        f"  probed ok         : {ok}/{len(result.probes)}"
+        if result.probing
+        else "  probing           : disabled (--no-probe), field names only",
     ]
     for p in result.probes:
         if p.status != "ok":
             lines.append(f"    - {p.endpoint}: {p.status} ({p.detail})")
+    if result.warnings:
+        lines += ["", "WARNINGS:"] + [f"  ! {w}" for w in result.warnings]
     lines.append("")
     if failures:
         lines.append(f"NEW PII exposure introduced by this migration ({len(failures)}):")

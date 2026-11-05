@@ -77,3 +77,30 @@ def test_invalid_or_missing_ignore_file_returns_2(tmp_path, capsys):
     assert main([*OFFLINE, "--ignore-file", str(bad)]) == 2
     assert "invalid" in capsys.readouterr().err
     assert main([*OFFLINE, "--ignore-file", str(tmp_path / "nope.yaml")]) == 2
+
+
+# ------------------------------------------------------------------ --no-probe, --param, --strip-prefix
+def test_no_probe_needs_no_base_url_and_reports_field_names_only(capsys):
+    code = main([*BASE, "--no-probe"])
+    out = capsys.readouterr().out
+    assert code == 1 and "probing           : disabled" in out and "AADHAAR" in out
+
+
+def test_base_url_is_required_unless_no_probe(capsys):
+    assert main(BASE) == 2
+    assert "--base-url is required" in capsys.readouterr().err
+
+
+def test_bad_header_and_param_are_input_errors_not_gate_failures(capsys):
+    # exit code 1 must only ever mean "the PII gate failed"
+    assert main([*OFFLINE, "-H", "no-colon-here"]) == 2
+    assert "bad --header" in capsys.readouterr().err
+    assert main([*OFFLINE, "--param", "novalue"]) == 2
+    assert "bad --param" in capsys.readouterr().err
+    assert main([*OFFLINE, "--param", "=x"]) == 2
+
+
+def test_strip_prefix_is_accepted(capsys):
+    code = main([*BASE, "--no-probe", "--strip-prefix", "/api", "--strip-prefix", "/internal"])
+    assert code in (0, 1)
+    assert "WARNINGS" not in capsys.readouterr().out
