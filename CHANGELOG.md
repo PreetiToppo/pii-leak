@@ -3,6 +3,18 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- `--strip-prefix` to match endpoints across specs with different base paths (for example `/api`).
+- `--param name=value` to supply real path, query and header parameter values when probing.
+- `--no-probe` spec-only mode that does not need `--base-url`.
+- A warning when the two specs share no endpoints, since every endpoint is then treated as new.
+
+### Fixed
+- Invalid `--header` input exited with code 1 (the "gate failed" code). Bad input now exits with 2.
+- Path parameter values are URL-quoted.
+
 ## [0.1.0] - 2026-11-04
 
 ### Added

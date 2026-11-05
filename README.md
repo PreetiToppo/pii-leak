@@ -1,7 +1,5 @@
 # PIILeak
 
-   [![CI](https://github.com/PreetiToppo/pii-leak/actions/workflows/ci.yml/badge.svg)](https://github.com/PreetiToppo/pii-leak/actions/workflows/ci.yml)
-
 A CI gate that catches **PII accidentally exposed when an API is migrated** (v1 to v2).
 
 It compares the old and new API specs, probes the changed endpoints on the new API, scans the
@@ -73,12 +71,23 @@ piileak scan --old OLD_SPEC --new NEW_SPEC --base-url URL [options]
 | `--probe-all` | Also probe unchanged endpoints (finds undocumented leaks) |
 | `--no-static` | Disable field-name heuristics |
 | `--allow-unsafe` | Also probe POST/PUT/PATCH/DELETE (staging only) |
+| `--no-probe` | Spec-only mode: never call the API, check new field names only (`--base-url` not needed) |
+| `--param name=value` | Value for a path, query or header parameter (repeatable), e.g. `--param username=user1` |
+| `--strip-prefix /api` | Drop a leading base path before matching endpoints (repeatable) |
 | `--allow-private` | Allow localhost / private-network targets (refused by default) |
 | `--max-retries N` | Retries for 429, 502, 503, 504 and connection errors (default 2) |
 | `--max-requests N` | Hard cap on total HTTP requests (default 500) |
 | `--include-person` | Also report person names (noisy) |
 
 Exit codes: `0` pass, `1` PII gate failed, `2` invalid input or unsafe target.
+
+## Matching endpoints across versions
+
+Endpoints are matched by a canonical key: `/v1`, `/v2` style segments are dropped and `{param}` names
+become `{}`. If the two specs use different base paths (for example Swagger 2.0 `basePath: /v2` against
+OpenAPI 3 `servers: /api/v3`), add `--strip-prefix /api`. When no endpoint matches at all, the report
+shows a warning, because every endpoint would otherwise look new and old exposure would be blamed on
+the migration.
 
 ## Accepting known risks
 
