@@ -1,5 +1,7 @@
 # PIILeak
 
+   [![CI](https://github.com/PreetiToppo/pii-leak/actions/workflows/ci.yml/badge.svg)](https://github.com/PreetiToppo/pii-leak/actions/workflows/ci.yml)
+
 A CI gate that catches **PII accidentally exposed when an API is migrated** (v1 to v2).
 
 It compares the old and new API specs, probes the changed endpoints on the new API, scans the
